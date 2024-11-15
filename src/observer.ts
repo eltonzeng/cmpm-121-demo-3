@@ -10,6 +10,23 @@ export interface Subject {
   notifyObservers(event: string, message: string): void;
 }
 
+// Concrete Subject (Game Event Manager)
+export class GameEventManager implements Subject {
+  private observers: Observer[] = [];
+
+  addObserver(observer: Observer): void {
+    this.observers.push(observer);
+  }
+
+  removeObserver(observer: Observer): void {
+    this.observers = this.observers.filter((obs) => obs !== observer);
+  }
+
+  notifyObservers(event: string, message: string): void {
+    this.observers.forEach((observer) => observer.update(event, message));
+  }
+}
+
 // Concrete Observer (for notifications)
 export class NotificationSystem implements Observer {
   update(event: string, message: string): void {

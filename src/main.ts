@@ -1,201 +1,83 @@
 import leaflet from "leaflet";
 import "./leafletWorkaround.ts";
 import luck from "./luck.ts";
-import CoinFactory, { Coin } from "./flyweightCoin.ts";
+import { Coin, coinFactory } from "./flyweightCoin.ts";
 import GameStateManager from "./memento.ts";
-import { NotificationSystem, Observer, Subject } from "./observer.ts";
+import { GameEventManager } from "./observer.ts";
 
-const OAKES_CLASSROOM = leaflet.latLng(36.98949379578401, -122.06277128548504);
-const GAMEPLAY_ZOOM_LEVEL = 19;
-const TILE_DEGREES = 1e-4;
+const OAKES_LAT = 36.98949379578401;
+const OAKES_LNG = -122.06277128548504;
+
+const TILE_DEGREES = 1e-4; // 0.0001 degrees grid cells
 const NEIGHBORHOOD_SIZE = 8;
 const CACHE_SPAWN_PROBABILITY = 0.1;
 
-interface Cell {
-  i: number;
-  j: number;
+const gameEventManager = new GameEventManager();
+const _gameStateManager = new GameStateManager();
+
+const playerInventory: Coin[] = [];
+const caches: { [key: string]: Coin[] } = {};
+
+// Convert latitude/longitude to grid cells based on Null Island
+function _latLngToCell(lat: number, lng: number) {
+  const i = Math.floor(lat / TILE_DEGREES);
+  const j = Math.floor(lng / TILE_DEGREES);
+  return { i, j };
 }
 
-interface Cache {
-  cell: Cell;
-  coins: Coin[];
+function spawnCoinsForCache(i: number, j: number, coinCount: number) {
+  const coins: Coin[] = [];
+  for (let serial = 0; serial < coinCount; serial++) {
+    const coin = coinFactory.getCoin(i, j, serial);
+    coins.push(coin);
+  }
+  return coins;
 }
 
-// Subject Implementation
-class GameEventManager implements Subject {
-  private observers: Observer[] = [];
+function spawnCache(i: number, j: number) {
+  const cacheKey = `${i}:${j}`;
+  if (luck(cacheKey) < CACHE_SPAWN_PROBABILITY) {
+    const coinCount = Math.floor(luck(cacheKey + "-coins") * 3) + 1; // 1-3 coins
+    const coins = spawnCoinsForCache(i, j, coinCount);
+    caches[cacheKey] = coins;
 
-  addObserver(observer: Observer): void {
-    this.observers.push(observer);
-  }
+    const bounds = leaflet.latLngBounds([
+      [OAKES_LAT + i * TILE_DEGREES, OAKES_LNG + j * TILE_DEGREES],
+      [OAKES_LAT + (i + 1) * TILE_DEGREES, OAKES_LNG + (j + 1) * TILE_DEGREES],
+    ]);
 
-  removeObserver(observer: Observer): void {
-    this.observers = this.observers.filter((obs) => obs !== observer);
-  }
-
-  notifyObservers(event: string, message: string): void {
-    for (const observer of this.observers) {
-      observer.update(event, message);
-    }
+    const marker = leaflet.rectangle(bounds);
+    marker.bindPopup(() => {
+      const popupDiv = document.createElement("div");
+      popupDiv.innerHTML = `<div>Cache at ${cacheKey}</div>`;
+      coins.forEach((coin) => {
+        const coinButton = document.createElement("button");
+        coinButton.textContent = `Collect ${coin.toString()}`;
+        coinButton.addEventListener("click", () => {
+          collectCoin(coin, cacheKey);
+        });
+        popupDiv.appendChild(coinButton);
+      });
+      return popupDiv;
+    });
+    marker.addTo(map);
   }
 }
 
-// Initialize the map
-const map = leaflet.map(document.getElementById("app")!, {
-  center: OAKES_CLASSROOM,
-  zoom: GAMEPLAY_ZOOM_LEVEL,
-  minZoom: GAMEPLAY_ZOOM_LEVEL,
-  maxZoom: GAMEPLAY_ZOOM_LEVEL,
-  zoomControl: false,
-  scrollWheelZoom: false,
+function collectCoin(coin: Coin, cacheKey: string) {
+  playerInventory.push(coin);
+  caches[cacheKey] = caches[cacheKey].filter((c) => c !== coin);
+  gameEventManager.notifyObservers("Coin Collected", coin.toString());
+}
+
+// Initialize map and caches
+const map = leaflet.map(document.getElementById("map")!, {
+  center: leaflet.latLng(OAKES_LAT, OAKES_LNG),
+  zoom: 19,
 });
 
-leaflet
-  .tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution:
-      '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-  })
-  .addTo(map);
-
-const playerMarker = leaflet.marker(OAKES_CLASSROOM).addTo(map);
-playerMarker.bindTooltip("Player");
-
-// Game State Variables
-let playerInventory: Coin[] = [];
-let caches: { [key: string]: Coin[] } = {};
-const gameStateManager = new GameStateManager();
-const gameEventManager = new GameEventManager();
-const notificationSystem = new NotificationSystem();
-
-// Register the notification observer
-gameEventManager.addObserver(notificationSystem);
-
-// Helper function to generate unique coin IDs
-function generateCoinId(cell: Cell, index: number): string {
-  return `${cell.i}:${cell.j}#${index}`;
-}
-
-// Function to spawn a cache with random coins
-function spawnCache(cell: Cell): Cache {
-  const coinTypes = ["gold", "silver", "bronze"];
-  const coins: Coin[] = Array.from({ length: 3 }, (_, index) => {
-    const type = coinTypes[Math.floor(Math.random() * coinTypes.length)];
-    return {
-      id: generateCoinId(cell, index + 1),
-      cell,
-      flyweight: CoinFactory.getFlyweight(type),
-    };
-  });
-
-  const cache: Cache = { cell, coins };
-  caches[`${cell.i},${cell.j}`] = coins;
-
-  const cacheMarker = leaflet.marker([
-    OAKES_CLASSROOM.lat + cell.i * TILE_DEGREES,
-    OAKES_CLASSROOM.lng + cell.j * TILE_DEGREES,
-  ]).addTo(map);
-
-  cacheMarker.bindPopup(createCachePopup(cache));
-  return cache;
-}
-
-// Function to create the popup content for a cache
-function createCachePopup(cache: Cache) {
-  const popupDiv = document.createElement("div");
-  popupDiv.innerHTML =
-    `<h4>Cache ${cache.cell.i}:${cache.cell.j}</h4><ul id="cacheList"></ul>`;
-
-  const cacheList = popupDiv.querySelector("#cacheList")!;
-  cache.coins.forEach((coin) => {
-    const listItem = document.createElement("li");
-    listItem.innerHTML = `
-      ${coin.flyweight.type} (Value: ${coin.flyweight.value}) <button class="collect-btn">Collect</button>
-    `;
-    listItem.querySelector("button")?.addEventListener(
-      "click",
-      () => collectCoin(coin, cache),
-    );
-    cacheList.appendChild(listItem);
-  });
-
-  return popupDiv;
-}
-
-// Function to collect a coin from a cache
-function collectCoin(coin: Coin, cache: Cache) {
-  playerInventory.push(coin);
-  cache.coins = cache.coins.filter((c) => c.id !== coin.id);
-  caches[`${cache.cell.i},${cache.cell.j}`] = cache.coins;
-  gameEventManager.notifyObservers(
-    "Coin Collected",
-    `You collected a ${coin.flyweight.type} coin!`,
-  );
-}
-
-// Function to save the game state
-function saveGameState() {
-  gameStateManager.saveState(playerInventory, caches);
-  gameEventManager.notifyObservers(
-    "Game Saved",
-    "Your game state has been saved.",
-  );
-}
-
-// Function to load the game state
-function loadGameState() {
-  const loadedState = gameStateManager.loadState();
-  if (loadedState) {
-    playerInventory = loadedState.playerInventory;
-    caches = loadedState.caches;
-    gameEventManager.notifyObservers(
-      "Game Loaded",
-      "Game state loaded successfully!",
-    );
-
-    // Clear existing markers and re-render caches
-    map.eachLayer((layer: leaflet.Layer) => {
-      if (layer instanceof leaflet.Marker && layer !== playerMarker) {
-        map.removeLayer(layer);
-      }
-    });
-
-    for (const key in caches) {
-      const [i, j] = key.split(",").map(Number);
-      spawnCache({ i, j });
-    }
+for (let i = -NEIGHBORHOOD_SIZE; i < NEIGHBORHOOD_SIZE; i++) {
+  for (let j = -NEIGHBORHOOD_SIZE; j < NEIGHBORHOOD_SIZE; j++) {
+    spawnCache(i, j);
   }
 }
-
-// Function to reset the game state
-function resetGameState() {
-  playerInventory = [];
-  caches = {};
-  gameStateManager.reset();
-  gameEventManager.notifyObservers("Game Reset", "Game state has been reset.");
-}
-
-// Game initialization with cache spawns
-for (let i = -NEIGHBORHOOD_SIZE; i <= NEIGHBORHOOD_SIZE; i++) {
-  for (let j = -NEIGHBORHOOD_SIZE; j <= NEIGHBORHOOD_SIZE; j++) {
-    if (luck(`${i},${j}`) < CACHE_SPAWN_PROBABILITY) {
-      spawnCache({ i, j });
-    }
-  }
-}
-
-// Add Save, Load, and Reset buttons
-const saveButton = document.createElement("button");
-saveButton.textContent = "Save Game";
-saveButton.onclick = saveGameState;
-document.body.appendChild(saveButton);
-
-const loadButton = document.createElement("button");
-loadButton.textContent = "Load Game";
-loadButton.onclick = loadGameState;
-document.body.appendChild(loadButton);
-
-const resetButton = document.createElement("button");
-resetButton.textContent = "Reset Game";
-resetButton.onclick = resetGameState;
-document.body.appendChild(resetButton);

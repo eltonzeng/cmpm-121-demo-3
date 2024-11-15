@@ -1,43 +1,37 @@
-// Flyweight Coin Interface
-export interface FlyweightCoin {
-  type: string; // e.g., "gold", "silver", "bronze"
-  value: number; // e.g., 1, 5, 10 points
-}
-
-// Coin Class with Extrinsic Data
-export interface Coin {
-  id: string;
-  cell: { i: number; j: number };
-  flyweight: FlyweightCoin;
-}
-
-// Coin Factory for Flyweight Pattern
-class CoinFactory {
-  private static flyweights: Map<string, FlyweightCoin> = new Map();
-
-  static getFlyweight(type: string): FlyweightCoin {
-    if (!this.flyweights.has(type)) {
-      const flyweightCoin: FlyweightCoin = this.createFlyweight(type);
-      this.flyweights.set(type, flyweightCoin);
-    }
-    return this.flyweights.get(type)!;
+export interface CoinData {
+    i: number;
+    j: number;
+    serial: number;
   }
-
-  private static createFlyweight(type: string): FlyweightCoin {
-    switch (type) {
-      case "gold":
-        return { type: "gold", value: 10 };
-      case "silver":
-        return { type: "silver", value: 5 };
-      case "bronze":
-      default:
-        return { type: "bronze", value: 1 };
+  
+  export class Coin implements CoinData {
+    i: number;
+    j: number;
+    serial: number;
+  
+    constructor(i: number, j: number, serial: number) {
+      this.i = i;
+      this.j = j;
+      this.serial = serial;
+    }
+  
+    toString(): string {
+      return `${this.i}:${this.j}#${this.serial}`;
     }
   }
-
-  static getFlyweightCount(): number {
-    return this.flyweights.size;
+  
+  // Flyweight Factory for Coins
+  export class CoinFactory {
+    private coins: { [key: string]: Coin } = {};
+  
+    getCoin(i: number, j: number, serial: number): Coin {
+      const key = `${i}:${j}#${serial}`;
+      if (!this.coins[key]) {
+        this.coins[key] = new Coin(i, j, serial);
+      }
+      return this.coins[key];
+    }
   }
-}
-
-export default CoinFactory;
+  
+  export const coinFactory = new CoinFactory();
+  

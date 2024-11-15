@@ -3,7 +3,7 @@ import "./leafletWorkaround.ts";
 import luck from "./luck.ts";
 import CoinFactory, { Coin } from "./flyweightCoin.ts";
 import GameStateManager from "./memento.ts";
-import { Observer, Subject, NotificationSystem } from "./observer.ts";
+import { NotificationSystem, Observer, Subject } from "./observer.ts";
 
 const OAKES_CLASSROOM = leaflet.latLng(36.98949379578401, -122.06277128548504);
 const GAMEPLAY_ZOOM_LEVEL = 19;
@@ -103,15 +103,19 @@ function spawnCache(cell: Cell): Cache {
 // Function to create the popup content for a cache
 function createCachePopup(cache: Cache) {
   const popupDiv = document.createElement("div");
-  popupDiv.innerHTML = `<h4>Cache ${cache.cell.i}:${cache.cell.j}</h4><ul id="cacheList"></ul>`;
-  
+  popupDiv.innerHTML =
+    `<h4>Cache ${cache.cell.i}:${cache.cell.j}</h4><ul id="cacheList"></ul>`;
+
   const cacheList = popupDiv.querySelector("#cacheList")!;
   cache.coins.forEach((coin) => {
     const listItem = document.createElement("li");
     listItem.innerHTML = `
       ${coin.flyweight.type} (Value: ${coin.flyweight.value}) <button class="collect-btn">Collect</button>
     `;
-    listItem.querySelector("button")?.addEventListener("click", () => collectCoin(coin, cache));
+    listItem.querySelector("button")?.addEventListener(
+      "click",
+      () => collectCoin(coin, cache),
+    );
     cacheList.appendChild(listItem);
   });
 
@@ -123,13 +127,19 @@ function collectCoin(coin: Coin, cache: Cache) {
   playerInventory.push(coin);
   cache.coins = cache.coins.filter((c) => c.id !== coin.id);
   caches[`${cache.cell.i},${cache.cell.j}`] = cache.coins;
-  gameEventManager.notifyObservers("Coin Collected", `You collected a ${coin.flyweight.type} coin!`);
+  gameEventManager.notifyObservers(
+    "Coin Collected",
+    `You collected a ${coin.flyweight.type} coin!`,
+  );
 }
 
 // Function to save the game state
 function saveGameState() {
   gameStateManager.saveState(playerInventory, caches);
-  gameEventManager.notifyObservers("Game Saved", "Your game state has been saved.");
+  gameEventManager.notifyObservers(
+    "Game Saved",
+    "Your game state has been saved.",
+  );
 }
 
 // Function to load the game state
@@ -138,7 +148,10 @@ function loadGameState() {
   if (loadedState) {
     playerInventory = loadedState.playerInventory;
     caches = loadedState.caches;
-    gameEventManager.notifyObservers("Game Loaded", "Game state loaded successfully!");
+    gameEventManager.notifyObservers(
+      "Game Loaded",
+      "Game state loaded successfully!",
+    );
 
     // Clear existing markers and re-render caches
     map.eachLayer((layer: leaflet.Layer) => {

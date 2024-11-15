@@ -1,24 +1,20 @@
 // Observer Interface
 export interface Observer {
-    update(data: any): void;
+    update(event: string, message: string): void;
   }
   
-  // Subject (Observable)
-  export class Subject {
-    private observers: Observer[] = [];
+  // Subject Interface
+  export interface Subject {
+    addObserver(observer: Observer): void;
+    removeObserver(observer: Observer): void;
+    notifyObservers(event: string, message: string): void;
+  }
   
-    addObserver(observer: Observer): void {
-      this.observers.push(observer);
-    }
-  
-    removeObserver(observer: Observer): void {
-      this.observers = this.observers.filter((obs) => obs !== observer);
-    }
-  
-    notifyObservers(data: any): void {
-      for (const observer of this.observers) {
-        observer.update(data);
-      }
+  // Concrete Observer (for notifications)
+  export class NotificationSystem implements Observer {
+    update(event: string, message: string): void {
+      console.log(`[Notification] ${event}: ${message}`);
+      alert(`[Notification] ${event}: ${message}`);
     }
   }
   

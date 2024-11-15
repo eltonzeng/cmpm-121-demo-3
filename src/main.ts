@@ -1,8 +1,8 @@
 import leaflet from "leaflet";
 import "./leafletWorkaround.ts";
 import luck from "./luck.ts";
+import CoinFactory, { Coin } from "./flyweightCoin.ts";
 
-// Constants
 const OAKES_CLASSROOM = leaflet.latLng(36.98949379578401, -122.06277128548504);
 const GAMEPLAY_ZOOM_LEVEL = 19;
 const TILE_DEGREES = 1e-4;
@@ -14,17 +14,11 @@ interface Cell {
   j: number;
 }
 
-interface Coin {
-  id: string;
-  cell: Cell;
-}
-
 interface Cache {
   cell: Cell;
   coins: Coin[];
 }
 
-// Initialize the map
 const map = leaflet.map(document.getElementById("app")!, {
   center: OAKES_CLASSROOM,
   zoom: GAMEPLAY_ZOOM_LEVEL,
@@ -34,7 +28,6 @@ const map = leaflet.map(document.getElementById("app")!, {
   scrollWheelZoom: false,
 });
 
-// Add background tile layer
 leaflet
   .tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
@@ -43,24 +36,25 @@ leaflet
   })
   .addTo(map);
 
-// Add player marker
 const playerMarker = leaflet.marker(OAKES_CLASSROOM).addTo(map);
 playerMarker.bindTooltip("Player");
 
-// Inventory management
 let playerInventory: Coin[] = [];
 
-// Function to generate cache ID
 function generateCoinId(cell: Cell, index: number): string {
   return `${cell.i}:${cell.j}#${index}`;
 }
 
-// Function to spawn a cache
 function spawnCache(cell: Cell): Cache {
-  const coins: Coin[] = Array.from({ length: 3 }, (_, index) => ({
-    id: generateCoinId(cell, index + 1),
-    cell,
-  }));
+  const coinTypes = ["gold", "silver", "bronze"];
+  const coins: Coin[] = Array.from({ length: 3 }, (_, index) => {
+    const type = coinTypes[Math.floor(Math.random() * coinTypes.length)];
+    return {
+      id: generateCoinId(cell, index + 1),
+      cell,
+      flyweight: CoinFactory.getFlyweight(type),
+    };
+  });
 
   const cache: Cache = { cell, coins };
   const cacheMarker = leaflet.marker([
@@ -72,7 +66,6 @@ function spawnCache(cell: Cell): Cache {
   return cache;
 }
 
-// Create Cache Popup UI
 function createCachePopup(cache: Cache) {
   const popupDiv = document.createElement("div");
   popupDiv.innerHTML = `<h4>Cache ${cache.cell.i}:${cache.cell.j}</h4><ul id="cacheList"></ul>`;
@@ -81,13 +74,12 @@ function createCachePopup(cache: Cache) {
   cache.coins.forEach((coin) => {
     const listItem = document.createElement("li");
     listItem.innerHTML = `
-      ${coin.id} <button class="collect-btn">Collect</button>
+      ${coin.flyweight.type} (Value: ${coin.flyweight.value}) <button class="collect-btn">Collect</button>
     `;
     listItem.querySelector("button")?.addEventListener("click", () => collectCoin(coin, cache));
     cacheList.appendChild(listItem);
   });
 
-  // Deposit Button
   const depositButton = document.createElement("button");
   depositButton.textContent = "Deposit Coins";
   depositButton.addEventListener("click", () => depositCoins(cache));
@@ -96,14 +88,12 @@ function createCachePopup(cache: Cache) {
   return popupDiv;
 }
 
-// Collecting coins from cache
 function collectCoin(coin: Coin, cache: Cache) {
   playerInventory.push(coin);
   cache.coins = cache.coins.filter((c) => c.id !== coin.id);
-  console.log(`Collected ${coin.id}`);
+  console.log(`Collected ${coin.flyweight.type} Coin with value ${coin.flyweight.value}`);
 }
 
-// Depositing coins to a cache
 function depositCoins(cache: Cache) {
   playerInventory.forEach((coin) => {
     cache.coins.push(coin);
@@ -112,7 +102,6 @@ function depositCoins(cache: Cache) {
   console.log(`Deposited all coins`);
 }
 
-// Spawning caches around the player's neighborhood
 for (let i = -NEIGHBORHOOD_SIZE; i <= NEIGHBORHOOD_SIZE; i++) {
   for (let j = -NEIGHBORHOOD_SIZE; j <= NEIGHBORHOOD_SIZE; j++) {
     if (luck(`${i},${j}`) < CACHE_SPAWN_PROBABILITY) {
@@ -120,3 +109,5 @@ for (let i = -NEIGHBORHOOD_SIZE; i <= NEIGHBORHOOD_SIZE; i++) {
     }
   }
 }
+
+console.log(`Total Flyweight Coins: ${CoinFactory.getFlyweightCount()}`);

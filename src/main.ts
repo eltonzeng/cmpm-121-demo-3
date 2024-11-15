@@ -2,6 +2,7 @@ import leaflet from "leaflet";
 import "./leafletWorkaround.ts";
 import luck from "./luck.ts";
 import CoinFactory, { Coin } from "./flyweightCoin.ts";
+import GameStateManager from "./memento.ts";
 
 const OAKES_CLASSROOM = leaflet.latLng(36.98949379578401, -122.06277128548504);
 const GAMEPLAY_ZOOM_LEVEL = 19;
@@ -40,6 +41,8 @@ const playerMarker = leaflet.marker(OAKES_CLASSROOM).addTo(map);
 playerMarker.bindTooltip("Player");
 
 let playerInventory: Coin[] = [];
+let caches: { [key: string]: Coin[] } = {};
+const gameStateManager = new GameStateManager();
 
 function generateCoinId(cell: Cell, index: number): string {
   return `${cell.i}:${cell.j}#${index}`;
@@ -57,6 +60,8 @@ function spawnCache(cell: Cell): Cache {
   });
 
   const cache: Cache = { cell, coins };
+  caches[`${cell.i},${cell.j}`] = coins;
+
   const cacheMarker = leaflet.marker([
     OAKES_CLASSROOM.lat + cell.i * TILE_DEGREES,
     OAKES_CLASSROOM.lng + cell.j * TILE_DEGREES,
@@ -68,22 +73,21 @@ function spawnCache(cell: Cell): Cache {
 
 function createCachePopup(cache: Cache) {
   const popupDiv = document.createElement("div");
-  popupDiv.innerHTML = `<h4>Cache ${cache.cell.i}:${cache.cell.j}</h4><ul id="cacheList"></ul>`;
-  
+  popupDiv.innerHTML =
+    `<h4>Cache ${cache.cell.i}:${cache.cell.j}</h4><ul id="cacheList"></ul>`;
+
   const cacheList = popupDiv.querySelector("#cacheList")!;
   cache.coins.forEach((coin) => {
     const listItem = document.createElement("li");
     listItem.innerHTML = `
       ${coin.flyweight.type} (Value: ${coin.flyweight.value}) <button class="collect-btn">Collect</button>
     `;
-    listItem.querySelector("button")?.addEventListener("click", () => collectCoin(coin, cache));
+    listItem.querySelector("button")?.addEventListener(
+      "click",
+      () => collectCoin(coin, cache),
+    );
     cacheList.appendChild(listItem);
   });
-
-  const depositButton = document.createElement("button");
-  depositButton.textContent = "Deposit Coins";
-  depositButton.addEventListener("click", () => depositCoins(cache));
-  popupDiv.appendChild(depositButton);
 
   return popupDiv;
 }
@@ -91,17 +95,24 @@ function createCachePopup(cache: Cache) {
 function collectCoin(coin: Coin, cache: Cache) {
   playerInventory.push(coin);
   cache.coins = cache.coins.filter((c) => c.id !== coin.id);
-  console.log(`Collected ${coin.flyweight.type} Coin with value ${coin.flyweight.value}`);
+  caches[`${cache.cell.i},${cache.cell.j}`] = cache.coins;
+  console.log(`Collected ${coin.flyweight.type} Coin`);
 }
 
-function depositCoins(cache: Cache) {
-  playerInventory.forEach((coin) => {
-    cache.coins.push(coin);
-  });
-  playerInventory = [];
-  console.log(`Deposited all coins`);
+function saveGameState() {
+  gameStateManager.saveState(playerInventory, caches);
 }
 
+function loadGameState() {
+  const loadedState = gameStateManager.loadState();
+  if (loadedState) {
+    playerInventory = loadedState.playerInventory;
+    caches = loadedState.caches;
+    console.log("Loaded game state with inventory and caches.");
+  }
+}
+
+// Game initialization with cache spawns
 for (let i = -NEIGHBORHOOD_SIZE; i <= NEIGHBORHOOD_SIZE; i++) {
   for (let j = -NEIGHBORHOOD_SIZE; j <= NEIGHBORHOOD_SIZE; j++) {
     if (luck(`${i},${j}`) < CACHE_SPAWN_PROBABILITY) {
@@ -111,3 +122,14 @@ for (let i = -NEIGHBORHOOD_SIZE; i <= NEIGHBORHOOD_SIZE; i++) {
 }
 
 console.log(`Total Flyweight Coins: ${CoinFactory.getFlyweightCount()}`);
+
+// Save/Load buttons
+const saveButton = document.createElement("button");
+saveButton.textContent = "Save Game";
+saveButton.onclick = saveGameState;
+document.body.appendChild(saveButton);
+
+const loadButton = document.createElement("button");
+loadButton.textContent = "Load Game";
+loadButton.onclick = loadGameState;
+document.body.appendChild(loadButton);

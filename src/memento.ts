@@ -1,4 +1,4 @@
-import { Coin, FlyweightCoin } from "./flyweightCoin.ts";
+import { Coin } from "./flyweightCoin.ts";
 
 interface GameStateSnapshot {
   playerInventory: Coin[];
@@ -45,6 +45,12 @@ class GameStateManager {
     const latestSnapshot = this.mementos.pop()!;
     console.log("Game state loaded.");
     return latestSnapshot.getState();
+  }
+
+  // method to reset all saved states
+  reset() {
+    this.mementos = [];
+    console.log("All saved game states have been reset.");
   }
 }
 

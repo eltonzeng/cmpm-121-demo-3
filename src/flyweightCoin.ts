@@ -1,11 +1,20 @@
 export class Coin {
   private id: string;
+
   constructor(private cacheId: string, private serial: number) {
     this.id = `${cacheId}#${serial}`;
   }
 
   getId(): string {
     return this.id;
+  }
+
+  getCacheId(): string {
+    return this.cacheId;
+  }
+
+  getSerial(): number {
+    return this.serial;
   }
 }
 

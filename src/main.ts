@@ -1,83 +1,122 @@
-import leaflet from "leaflet";
-import "./leafletWorkaround.ts";
-import luck from "./luck.ts";
-import { Coin, coinFactory } from "./flyweightCoin.ts";
-import GameStateManager from "./memento.ts";
-import { GameEventManager } from "./observer.ts";
+// main.ts
+import L from 'leaflet';
+import { GameStateManager } from './memento.ts';
+import { Coin, CoinFactory } from './flyweightCoin.ts';
+import { GameEventManager } from './observer.ts';
 
-const OAKES_LAT = 36.98949379578401;
-const OAKES_LNG = -122.06277128548504;
+let playerPosition = { lat: 0, lng: 0 };
+const movementStep = 0.0001;  // Movement granularity
+let nearbyCaches: { [key: string]: Coin[] } = {};
+let mapMarkers: { [key: string]: L.Marker } = {}; // Store cache markers by cache ID
 
-const TILE_DEGREES = 1e-4; // 0.0001 degrees grid cells
-const NEIGHBORHOOD_SIZE = 8;
-const CACHE_SPAWN_PROBABILITY = 0.1;
+const map = L.map('map').setView([playerPosition.lat, playerPosition.lng], 15);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
+const gameStateManager = new GameStateManager();
+const coinFactory = new CoinFactory();
 const gameEventManager = new GameEventManager();
-const _gameStateManager = new GameStateManager();
 
-const playerInventory: Coin[] = [];
-const caches: { [key: string]: Coin[] } = {};
+const playerMarker = L.marker([playerPosition.lat, playerPosition.lng]).addTo(map);
 
-// Convert latitude/longitude to grid cells based on Null Island
-function _latLngToCell(lat: number, lng: number) {
-  const i = Math.floor(lat / TILE_DEGREES);
-  const j = Math.floor(lng / TILE_DEGREES);
-  return { i, j };
+document.getElementById('north')!.onclick = () => movePlayer(0, movementStep);
+document.getElementById('south')!.onclick = () => movePlayer(0, -movementStep);
+document.getElementById('east')!.onclick = () => movePlayer(movementStep, 0);
+document.getElementById('west')!.onclick = () => movePlayer(-movementStep, 0);
+document.getElementById('reset')!.onclick = resetGameState;
+
+function movePlayer(dLng: number, dLat: number) {
+  playerPosition.lat += dLat;
+  playerPosition.lng += dLng;
+  updatePlayerPosition();
 }
 
-function spawnCoinsForCache(i: number, j: number, coinCount: number) {
-  const coins: Coin[] = [];
-  for (let serial = 0; serial < coinCount; serial++) {
-    const coin = coinFactory.getCoin(i, j, serial);
-    coins.push(coin);
+function updatePlayerPosition() {
+  map.setView([playerPosition.lat, playerPosition.lng]);
+  playerMarker.setLatLng([playerPosition.lat, playerPosition.lng]);
+
+  // Notify observers of the player’s movement
+  gameEventManager.notifyPlayerMoved(playerPosition);
+
+  // Regenerate nearby caches
+  manageCaches();
+  renderCachesOnMap();
+
+  // Save current game state
+  gameStateManager.saveState(playerPosition, nearbyCaches);
+}
+
+function regenerateNearbyCaches() {
+  Object.keys(nearbyCaches).forEach((cacheKey) => {
+    const [i, j] = cacheKey.split(':').map(Number);
+    const distance = Math.sqrt(
+      Math.pow(i - playerPosition.lat * 10000, 2) + Math.pow(j - playerPosition.lng * 10000, 2)
+    );
+
+    // Remove caches that are too far away
+    if (distance > 10) {
+      delete nearbyCaches[cacheKey];
+      console.log(`Removed distant cache at ${cacheKey}`);
+    }
+  });
+}
+
+
+function generateCachesAroundPlayer() {
+  nearbyCaches = {};
+
+  // Simulate cache locations around the player's position
+  const cacheIds = [
+    `${Math.round(playerPosition.lat * 10000)}:${Math.round(playerPosition.lng * 10000)}`,
+    `${Math.round(playerPosition.lat * 10000) + 1}:${Math.round(playerPosition.lng * 10000) + 1}`
+  ];
+
+  cacheIds.forEach((cacheId, _index) => {
+    const coinsInCache: Coin[] = [];
+
+    // Generate a few coins for each cache
+    for (let serial = 0; serial < 5; serial++) {
+      const coin = coinFactory.createCoin(cacheId, serial);
+      coinsInCache.push(coin);
+    }
+
+    nearbyCaches[cacheId] = coinsInCache;
+  });
+
+  console.log('Nearby caches generated:', nearbyCaches);
+}
+
+
+function manageCaches() {
+  // Step 1: Regenerate existing caches within range
+  regenerateNearbyCaches();
+
+  // Step 2: If no caches are nearby, generate new ones
+  if (Object.keys(nearbyCaches).length === 0) {
+    generateCachesAroundPlayer();
   }
-  return coins;
 }
 
-function spawnCache(i: number, j: number) {
-  const cacheKey = `${i}:${j}`;
-  if (luck(cacheKey) < CACHE_SPAWN_PROBABILITY) {
-    const coinCount = Math.floor(luck(cacheKey + "-coins") * 3) + 1; // 1-3 coins
-    const coins = spawnCoinsForCache(i, j, coinCount);
-    caches[cacheKey] = coins;
+function renderCachesOnMap() {
+  // Remove existing markers before adding new ones
+  Object.keys(mapMarkers).forEach((key) => {
+    map.removeLayer(mapMarkers[key]);
+  });
+  mapMarkers = {};
 
-    const bounds = leaflet.latLngBounds([
-      [OAKES_LAT + i * TILE_DEGREES, OAKES_LNG + j * TILE_DEGREES],
-      [OAKES_LAT + (i + 1) * TILE_DEGREES, OAKES_LNG + (j + 1) * TILE_DEGREES],
-    ]);
+  // Render new caches
+  Object.keys(nearbyCaches).forEach((cacheId) => {
+    const [i, j] = cacheId.split(':').map(Number);
+    const marker = L.marker([i / 10000, j / 10000]).addTo(map);
+    mapMarkers[cacheId] = marker;
+  });
 
-    const marker = leaflet.rectangle(bounds);
-    marker.bindPopup(() => {
-      const popupDiv = document.createElement("div");
-      popupDiv.innerHTML = `<div>Cache at ${cacheKey}</div>`;
-      coins.forEach((coin) => {
-        const coinButton = document.createElement("button");
-        coinButton.textContent = `Collect ${coin.toString()}`;
-        coinButton.addEventListener("click", () => {
-          collectCoin(coin, cacheKey);
-        });
-        popupDiv.appendChild(coinButton);
-      });
-      return popupDiv;
-    });
-    marker.addTo(map);
-  }
+  console.log('Caches rendered on the map:', nearbyCaches);
 }
 
-function collectCoin(coin: Coin, cacheKey: string) {
-  playerInventory.push(coin);
-  caches[cacheKey] = caches[cacheKey].filter((c) => c !== coin);
-  gameEventManager.notifyObservers("Coin Collected", coin.toString());
-}
 
-// Initialize map and caches
-const map = leaflet.map(document.getElementById("map")!, {
-  center: leaflet.latLng(OAKES_LAT, OAKES_LNG),
-  zoom: 19,
-});
-
-for (let i = -NEIGHBORHOOD_SIZE; i < NEIGHBORHOOD_SIZE; i++) {
-  for (let j = -NEIGHBORHOOD_SIZE; j < NEIGHBORHOOD_SIZE; j++) {
-    spawnCache(i, j);
-  }
+function resetGameState() {
+  playerPosition = { lat: 0, lng: 0 };
+  gameStateManager.reset();
+  gameEventManager.notifyObservers("Game Reset", "Game state has been reset.");
+  updatePlayerPosition();
 }

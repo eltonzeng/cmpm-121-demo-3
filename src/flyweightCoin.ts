@@ -1,36 +1,23 @@
-export interface CoinData {
-  i: number;
-  j: number;
-  serial: number;
-}
-
-export class Coin implements CoinData {
-  i: number;
-  j: number;
-  serial: number;
-
-  constructor(i: number, j: number, serial: number) {
-    this.i = i;
-    this.j = j;
-    this.serial = serial;
+export class Coin {
+  private id: string;
+  constructor(private cacheId: string, private serial: number) {
+    this.id = `${cacheId}#${serial}`;
   }
 
-  toString(): string {
-    return `${this.i}:${this.j}#${this.serial}`;
+  getId(): string {
+    return this.id;
   }
 }
 
-// Flyweight Factory for Coins
+// Coin Factory (Flyweight)
 export class CoinFactory {
-  private coins: { [key: string]: Coin } = {};
+  private coinPool: { [key: string]: Coin } = {};
 
-  getCoin(i: number, j: number, serial: number): Coin {
-    const key = `${i}:${j}#${serial}`;
-    if (!this.coins[key]) {
-      this.coins[key] = new Coin(i, j, serial);
+  createCoin(cacheId: string, serial: number): Coin {
+    const key = `${cacheId}#${serial}`;
+    if (!this.coinPool[key]) {
+      this.coinPool[key] = new Coin(cacheId, serial);
     }
-    return this.coins[key];
+    return this.coinPool[key];
   }
 }
-
-export const coinFactory = new CoinFactory();

@@ -132,7 +132,7 @@ function centerMap(cacheId: string): void {
 }
 
 // Attach the function to the global object
-globalThis.centerMap = centerMap;
+(globalThis as Partial<GlobalThis>).centerMap = centerMap;
 
 // Update movement history
 if (movementHistory) map.removeLayer(movementHistory);

@@ -39,11 +39,17 @@ export class GameEventManager implements Subject {
 
   // New method to handle player movement
   notifyPlayerMoved(position: { lat: number; lng: number }): void {
-    this.notifyObservers("Player Moved", `New Position: (${position.lat}, ${position.lng})`);
+    this.notifyObservers(
+      "Player Moved",
+      `New Position: (${position.lat}, ${position.lng})`,
+    );
   }
 
   // New method to handle cache updates
   notifyCacheUpdated(): void {
-    this.notifyObservers("Cache Updated", "Nearby caches have been regenerated.");
+    this.notifyObservers(
+      "Cache Updated",
+      "Nearby caches have been regenerated.",
+    );
   }
 }

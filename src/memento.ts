@@ -1,4 +1,4 @@
-import { Coin } from './flyweightCoin.ts';
+import { Coin } from "./flyweightCoin.ts";
 
 export interface GameStateSnapshot {
   playerPosition: { lat: number; lng: number };
@@ -16,7 +16,7 @@ class GameState implements Memento {
   constructor(
     playerPosition: { lat: number; lng: number },
     playerPositionHistory: { lat: number; lng: number }[], // Track movement
-    caches: { [key: string]: Coin[] }
+    caches: { [key: string]: Coin[] },
   ) {
     this.state = {
       playerPosition: { ...playerPosition },
@@ -36,9 +36,13 @@ export class GameStateManager {
   saveState(
     playerPosition: { lat: number; lng: number },
     playerPositionHistory: { lat: number; lng: number }[], // Updated
-    caches: { [key: string]: Coin[] }
+    caches: { [key: string]: Coin[] },
   ) {
-    const snapshot = new GameState(playerPosition, playerPositionHistory, caches);
+    const snapshot = new GameState(
+      playerPosition,
+      playerPositionHistory,
+      caches,
+    );
     this.mementos.push(snapshot);
     console.log(`Game state saved. Total saves: ${this.mementos.length}`);
   }

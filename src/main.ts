@@ -25,7 +25,7 @@ const playerPositionHistory: { lat: number; lng: number }[] = [];
 class PlayerMovementFacade {
   constructor(
     private playerPosition: { lat: number; lng: number },
-    private playerPositionHistory: { lat: number; lng: number }[]
+    private playerPositionHistory: { lat: number; lng: number }[],
   ) {}
 
   move(direction: "north" | "south" | "east" | "west", step: number) {
@@ -47,7 +47,10 @@ class PlayerMovementFacade {
   }
 }
 
-const playerMovement = new PlayerMovementFacade(playerPosition, playerPositionHistory);
+const playerMovement = new PlayerMovementFacade(
+  playerPosition,
+  playerPositionHistory,
+);
 
 function movePlayer(direction: "north" | "south" | "east" | "west") {
   playerMovement.move(direction, CELL_SIZE);
@@ -103,12 +106,14 @@ function updateMap() {
     const marker = L.marker(position).addTo(map);
 
     marker.bindPopup(
-      `<b>Cache ${cacheId}</b><br>Inventory:<ul>${cacheCoins
-        .map(
-          (coin) =>
-            `<li>${coin.getId()} <button onclick="centerMap('${cacheId}')">Center on cache</button></li>`
-        )
-        .join("")}</ul>`
+      `<b>Cache ${cacheId}</b><br>Inventory:<ul>${
+        cacheCoins
+          .map(
+            (coin) =>
+              `<li>${coin.getId()} <button onclick="centerMap('${cacheId}')">Center on cache</button></li>`,
+          )
+          .join("")
+      }</ul>`,
     );
   });
 }
@@ -165,7 +170,7 @@ function toggleGeolocation() {
       (error) => {
         console.error("Error obtaining geolocation:", error.message);
       },
-      { enableHighAccuracy: true }
+      { enableHighAccuracy: true },
     );
 
     alert("Geolocation tracking enabled.");
@@ -182,12 +187,27 @@ function resetGame() {
 }
 
 // Event Listeners
-document.getElementById("north")!.addEventListener("click", () => movePlayer("north"));
-document.getElementById("south")!.addEventListener("click", () => movePlayer("south"));
-document.getElementById("east")!.addEventListener("click", () => movePlayer("east"));
-document.getElementById("west")!.addEventListener("click", () => movePlayer("west"));
+document.getElementById("north")!.addEventListener(
+  "click",
+  () => movePlayer("north"),
+);
+document.getElementById("south")!.addEventListener(
+  "click",
+  () => movePlayer("south"),
+);
+document.getElementById("east")!.addEventListener(
+  "click",
+  () => movePlayer("east"),
+);
+document.getElementById("west")!.addEventListener(
+  "click",
+  () => movePlayer("west"),
+);
 document.getElementById("reset")!.addEventListener("click", resetGame);
-document.getElementById("geolocation")!.addEventListener("click", toggleGeolocation);
+document.getElementById("geolocation")!.addEventListener(
+  "click",
+  toggleGeolocation,
+);
 
 // Initialization
 generateCachesAroundPlayer();

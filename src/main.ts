@@ -1,122 +1,167 @@
-// main.ts
-import L from 'leaflet';
-import { GameStateManager } from './memento.ts';
-import { Coin, CoinFactory } from './flyweightCoin.ts';
-import { GameEventManager } from './observer.ts';
+import leaflet from "leaflet";
+import { Coin, CoinFactory } from "./flyweightCoin.ts";
+import { GameStateManager } from "./memento.ts";
+import { GameEventManager, NotificationSystem } from "./observer.ts";
 
-let playerPosition = { lat: 0, lng: 0 };
-const movementStep = 0.0001;  // Movement granularity
-let nearbyCaches: { [key: string]: Coin[] } = {};
-let mapMarkers: { [key: string]: L.Marker } = {}; // Store cache markers by cache ID
-
-const map = L.map('map').setView([playerPosition.lat, playerPosition.lng], 15);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
+// Initialize game managers
 const gameStateManager = new GameStateManager();
-const coinFactory = new CoinFactory();
 const gameEventManager = new GameEventManager();
 
-const playerMarker = L.marker([playerPosition.lat, playerPosition.lng]).addTo(map);
+// Observer system
+const notificationSystem = new NotificationSystem();
+gameEventManager.addObserver(notificationSystem);
 
-document.getElementById('north')!.onclick = () => movePlayer(0, movementStep);
-document.getElementById('south')!.onclick = () => movePlayer(0, -movementStep);
-document.getElementById('east')!.onclick = () => movePlayer(movementStep, 0);
-document.getElementById('west')!.onclick = () => movePlayer(-movementStep, 0);
-document.getElementById('reset')!.onclick = resetGameState;
+// Player's virtual position (latitude, longitude)
+let playerPosition = { lat: 0.0, lng: 0.0 };
 
-function movePlayer(dLng: number, dLat: number) {
-  playerPosition.lat += dLat;
-  playerPosition.lng += dLng;
-  updatePlayerPosition();
+// Cache and inventory
+let caches: { [key: string]: Coin[] } = {};
+const playerInventory: Coin[] = [];
+
+// Leaflet map setup
+const map = leaflet.map("map").setView([0, 0], 16);
+leaflet.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 18,
+}).addTo(map);
+
+// Player marker
+const playerMarker = leaflet.marker([playerPosition.lat, playerPosition.lng], {
+  title: "You",
+}).addTo(map);
+
+// Coin factory
+const coinFactory = new CoinFactory();
+
+// Display player's inventory
+const inventoryPanel = document.getElementById("statusPanel")!;
+function updateInventoryDisplay() {
+  inventoryPanel.innerHTML = `
+    <strong>Player Inventory:</strong> ${playerInventory.length} coins
+  `;
+}
+updateInventoryDisplay();
+
+// Function to update the player's marker
+function updatePlayerMarker() {
+  playerMarker.setLatLng([playerPosition.lat, playerPosition.lng]).bindTooltip(
+    `Player Position:<br>Lat: ${playerPosition.lat.toFixed(4)}<br>Lng: ${playerPosition.lng.toFixed(4)}`
+  ).openTooltip();
 }
 
-function updatePlayerPosition() {
-  map.setView([playerPosition.lat, playerPosition.lng]);
-  playerMarker.setLatLng([playerPosition.lat, playerPosition.lng]);
-
-  // Notify observers of the player’s movement
-  gameEventManager.notifyPlayerMoved(playerPosition);
-
-  // Regenerate nearby caches
-  manageCaches();
-  renderCachesOnMap();
-
-  // Save current game state
-  gameStateManager.saveState(playerPosition, nearbyCaches);
+// Function to generate caches with coins dynamically
+function generateCaches(centerLat: number, centerLng: number) {
+  const newCaches: { [key: string]: Coin[] } = {};
+  for (let i = -1; i <= 1; i++) {
+    for (let j = -1; j <= 1; j++) {
+      const lat = parseFloat((centerLat + i * 0.0001).toFixed(4));
+      const lng = parseFloat((centerLng + j * 0.0001).toFixed(4));
+      const cacheId = `${lat}:${lng}`;
+      if (!newCaches[cacheId]) {
+        newCaches[cacheId] = [];
+        for (let k = 0; k < 3; k++) {
+          newCaches[cacheId].push(coinFactory.createCoin(cacheId, k));
+        }
+      }
+    }
+  }
+  return newCaches;
 }
 
-function regenerateNearbyCaches() {
-  Object.keys(nearbyCaches).forEach((cacheKey) => {
-    const [i, j] = cacheKey.split(':').map(Number);
-    const distance = Math.sqrt(
-      Math.pow(i - playerPosition.lat * 10000, 2) + Math.pow(j - playerPosition.lng * 10000, 2)
-    );
+// Function to regenerate caches and display them
+function regenerateVisibleCaches() {
+  map.eachLayer((layer: leaflet.Layer) => {
+    if (layer instanceof leaflet.Marker && layer !== playerMarker) {
+      map.removeLayer(layer);
+    }
+  });
 
-    // Remove caches that are too far away
-    if (distance > 10) {
-      delete nearbyCaches[cacheKey];
-      console.log(`Removed distant cache at ${cacheKey}`);
+  Object.keys(caches).forEach((key) => {
+    const [lat, lng] = key.split(":").map(Number);
+    if (Math.abs(playerPosition.lat - lat) < 0.1 && Math.abs(playerPosition.lng - lng) < 0.1) {
+      const coins = caches[key];
+      const marker = leaflet.marker([lat, lng]);
+      const popupContent = `
+        <strong>Cache (${lat.toFixed(4)}, ${lng.toFixed(4)})</strong><br>
+        Coins: ${coins.length}<br>
+        <button onclick="window.collectCoin('${key}')">Collect</button>
+        <button onclick="window.depositCoin('${key}')">Deposit</button>
+      `;
+      marker.bindPopup(popupContent);
+      marker.addTo(map);
     }
   });
 }
 
-
-function generateCachesAroundPlayer() {
-  nearbyCaches = {};
-
-  // Simulate cache locations around the player's position
-  const cacheIds = [
-    `${Math.round(playerPosition.lat * 10000)}:${Math.round(playerPosition.lng * 10000)}`,
-    `${Math.round(playerPosition.lat * 10000) + 1}:${Math.round(playerPosition.lng * 10000) + 1}`
-  ];
-
-  cacheIds.forEach((cacheId, _index) => {
-    const coinsInCache: Coin[] = [];
-
-    // Generate a few coins for each cache
-    for (let serial = 0; serial < 5; serial++) {
-      const coin = coinFactory.createCoin(cacheId, serial);
-      coinsInCache.push(coin);
-    }
-
-    nearbyCaches[cacheId] = coinsInCache;
-  });
-
-  console.log('Nearby caches generated:', nearbyCaches);
-}
-
-
-function manageCaches() {
-  // Step 1: Regenerate existing caches within range
-  regenerateNearbyCaches();
-
-  // Step 2: If no caches are nearby, generate new ones
-  if (Object.keys(nearbyCaches).length === 0) {
-    generateCachesAroundPlayer();
+// Add functions to the global `window` object
+declare global {
+  interface GlobalThis {
+    collectCoin: (cacheKey: string) => void;
+    depositCoin: (cacheKey: string) => void;
   }
 }
 
-function renderCachesOnMap() {
-  // Remove existing markers before adding new ones
-  Object.keys(mapMarkers).forEach((key) => {
-    map.removeLayer(mapMarkers[key]);
-  });
-  mapMarkers = {};
+globalThis.collectCoin = (cacheKey: string) => {
+  const cacheCoins = caches[cacheKey];
+  if (cacheCoins && cacheCoins.length > 0) {
+    const collectedCoin = cacheCoins.pop();
+    if (collectedCoin) {
+      playerInventory.push(collectedCoin);
+      gameEventManager.notifyObservers("Coin Collected", `Collected a coin from cache ${cacheKey}`);
+      regenerateVisibleCaches();
+      updateInventoryDisplay();
+    }
+  } else {
+    alert("No coins available to collect!");
+  }
+};
 
-  // Render new caches
-  Object.keys(nearbyCaches).forEach((cacheId) => {
-    const [i, j] = cacheId.split(':').map(Number);
-    const marker = L.marker([i / 10000, j / 10000]).addTo(map);
-    mapMarkers[cacheId] = marker;
-  });
+globalThis.depositCoin = (cacheKey: string) => {
+  if (playerInventory.length > 0) {
+    const depositedCoin = playerInventory.pop();
+    if (depositedCoin) {
+      if (!caches[cacheKey]) {
+        caches[cacheKey] = [];
+      }
+      caches[cacheKey].push(depositedCoin);
+      gameEventManager.notifyObservers("Coin Deposited", `Deposited a coin into cache ${cacheKey}`);
+      regenerateVisibleCaches();
+      updateInventoryDisplay();
+    }
+  } else {
+    alert("No coins available in inventory!");
+  }
+};
 
-  console.log('Caches rendered on the map:', nearbyCaches);
+// Function to move the player and update the map
+function movePlayer(latDelta: number, lngDelta: number) {
+  playerPosition.lat += latDelta;
+  playerPosition.lng += lngDelta;
+  caches = { ...caches, ...generateCaches(playerPosition.lat, playerPosition.lng) };
+  updatePlayerMarker();
+  regenerateVisibleCaches();
+  gameEventManager.notifyObservers("Player Moved", `Moved to (${playerPosition.lat.toFixed(4)}, ${playerPosition.lng.toFixed(4)})`);
 }
 
+// Button controls
+document.getElementById("north")?.addEventListener("click", () => movePlayer(0.0001, 0));
+document.getElementById("south")?.addEventListener("click", () => movePlayer(-0.0001, 0));
+document.getElementById("east")?.addEventListener("click", () => movePlayer(0, 0.0001));
+document.getElementById("west")?.addEventListener("click", () => movePlayer(0, -0.0001));
+document.getElementById("reset")?.addEventListener("click", () => {
+  const loadedState = gameStateManager.loadState();
+  if (loadedState) {
+    playerPosition = loadedState.playerPosition;
+    caches = loadedState.caches;
+    regenerateVisibleCaches();
+    updateInventoryDisplay();
+  } else {
+    alert("No saved state to load!");
+  }
+});
 
-function resetGameState() {
-  playerPosition = { lat: 0, lng: 0 };
-  gameStateManager.reset();
-  gameEventManager.notifyObservers("Game Reset", "Game state has been reset.");
-  updatePlayerPosition();
+// Initialize game
+function initializeGame() {
+  caches = generateCaches(playerPosition.lat, playerPosition.lng);
+  regenerateVisibleCaches();
 }
+initializeGame();
